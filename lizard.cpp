@@ -160,7 +160,7 @@ int Cat::getId()
  void Cat::run() 
  {
 	 // launch the thread to simulate the cat's behavior	 
-	 
+  _catThread = new thread ( catThread, this); //AP JP
  }
  
  /**
@@ -171,6 +171,9 @@ int Cat::getId()
  void Cat::wait()
  {
 	 // wait for the thread to terminate
+   	if (_catThread != NULL) { //AP JP
+      _catThread->join(); //AP JP
+    } 
  }
  
  
@@ -668,7 +671,10 @@ int main(int argc, char **argv)
     /*
      * Create NUM_CATS cat threads
      */
-	 
+    vector<Cat*> allCats; //AP JP
+    for (int i=0; i < NUM_CATS; i++) { //AP JP
+	    allCats.push_back(new Cat(i)); //AP JP
+    }    
 
 	/*
 	 * Run NUM_LIZARDS and NUM_CATS threads
@@ -676,6 +682,9 @@ int main(int argc, char **argv)
     for (int i=0; i < NUM_LIZARDS; i++) {
         allLizards[i]->run();
     }
+    for (int i=0; i < NUM_CATS; i++) { //AP JP
+	    allCats[i]->run(); //AP JP
+    }    
 
 	/*
      * Now let the world run for a while
