@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <semaphore.h> // AP JP
 
 #include <iostream>
 #include <thread>
@@ -94,7 +95,10 @@ using namespace std;
 /*
  * Declare global variables here
  */
-
+// AP JP
+std::mutex sago2MonkeyGrassMutex;
+std::mutex monkeyGrass2SagoMutex;
+sem_t crossingSemaphore;
 
 /**************************************************/
 /* Please leave these variables alone.  They are  */
@@ -362,8 +366,7 @@ void Lizard::sago2MonkeyGrassIsSafe()
 		cout << flush;
     }
 
-	
-
+    sem_wait(&crossingSemaphore); // AP JP
 
 	if (debug)
     {
@@ -391,7 +394,10 @@ void Lizard::crossSago2MonkeyGrass()
 	/*
 	 * One more crossing this way
 	 */
+    // AP JP
+    sago2MonkeyGrassMutex.lock();
 	numCrossingSago2MonkeyGrass++;
+    sago2MonkeyGrassMutex.unlock();
 
 	/*
      * Check for lizards cross both ways
@@ -413,7 +419,10 @@ void Lizard::crossSago2MonkeyGrass()
     /*
      * That one seems to have made it
      */
-    numCrossingSago2MonkeyGrass--;
+    // AP JP
+    sago2MonkeyGrassMutex.lock();
+	numCrossingSago2MonkeyGrass--;
+    sago2MonkeyGrassMutex.unlock();
 }
 
 
@@ -433,10 +442,7 @@ void Lizard::madeIt2MonkeyGrass()
 		cout << flush;
     }
 
-
-
-
-
+    sem_post(&crossingSemaphore); // AP JP
 }
 
 
@@ -486,7 +492,7 @@ void Lizard::monkeyGrass2SagoIsSafe()
     }
 
 
-
+    sem_wait(&crossingSemaphore); // AP JP
 
 
 	if (debug)
@@ -515,7 +521,10 @@ void Lizard::crossMonkeyGrass2Sago()
     /*
      * One more crossing this way
      */
+    // AP JP
+    monkeyGrass2SagoMutex.lock();
 	numCrossingMonkeyGrass2Sago++;
+    monkeyGrass2SagoMutex.unlock();
 
   
     /*
@@ -537,7 +546,10 @@ void Lizard::crossMonkeyGrass2Sago()
 	/*
      * That one seems to have made it
      */
+    // AP JP
+	monkeyGrass2SagoMutex.lock();
 	numCrossingMonkeyGrass2Sago--;
+    monkeyGrass2SagoMutex.unlock();
 }
 
 
@@ -557,6 +569,8 @@ void Lizard::madeIt2Sago()
 		cout << "[" << _id << "] made the  monkey grass -> sago  crossing" << endl;
 		cout << flush;
     }
+
+    sem_post(&crossingSemaphore); // AP JP
 }
 
 /**
@@ -645,8 +659,7 @@ int main(int argc, char **argv)
 	/*
      * Initialize locks and/or semaphores
      */
-
-
+    sem_init(&crossingSemaphore, 0, MAX_LIZARD_CROSSING); // AP JP
 
 
 	/*
@@ -691,23 +704,35 @@ int main(int argc, char **argv)
     /*
      * Wait until all threads terminate
      */
+    // AP JP
+    for (int i = 0; i < NUM_LIZARDS; i++) {
+        allLizards[i]->wait();
+    }
 
-
-
-
+    for (int i = 0; i < NUM_CATS; i++) {
+        allCats[i]->wait();
+    }
 
 
 	/*
      * Delete the locks and semaphores
      */
-	 
+	sem_destroy(&crossingSemaphore); // AP JP
 	 
 	 
 	/*
 	 * Delete all cat and lizard objects
 	 */
- 
+    // AP JP
+    for (int i = 0; i < NUM_LIZARDS; i++) {
+        delete allLizards[i];
+        allLizards[i] = nullptr;
+    }
 
+    for (int i = 0; i < NUM_CATS; i++) {
+        delete allCats[i];
+        allCats[i] = nullptr;
+    }
 
 
 	/*
