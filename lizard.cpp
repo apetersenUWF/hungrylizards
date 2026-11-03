@@ -570,7 +570,7 @@ void Lizard::madeIt2Sago()
   
   * Status: Incomplete - Make changes as you see are necessary.
   */
-void Lizard::lizardThread(Lizard *aLizard)
+void Lizard::lizardThread(Lizard *aLizard) // AP JP
 {	
 	if (debug)
     {
@@ -587,24 +587,12 @@ void Lizard::lizardThread(Lizard *aLizard)
        * some functions by filling in the code.  Some  
        * are already completed - see the comments.
        */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        aLizard->sleepNow();
+        aLizard->sago2MonkeyGrassIsSafe();
+        aLizard->crossSago2MonkeyGrass();
+        aLizard->eat();
+        aLizard->monkeyGrass2SagoIsSafe();
+        aLizard->crossMonkeyGrass2Sago();
     }
 
 }
