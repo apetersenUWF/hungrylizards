@@ -590,9 +590,11 @@ void Lizard::lizardThread(Lizard *aLizard) // AP JP
         aLizard->sleepNow();
         aLizard->sago2MonkeyGrassIsSafe();
         aLizard->crossSago2MonkeyGrass();
+        aLizard->madeIt2MonkeyGrass();
         aLizard->eat();
         aLizard->monkeyGrass2SagoIsSafe();
         aLizard->crossMonkeyGrass2Sago();
+        aLizard->madeIt2Sago();
     }
 
 }
