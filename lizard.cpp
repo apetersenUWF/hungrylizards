@@ -54,7 +54,7 @@ using namespace std;
  * be simulated.  
  * Try 30 for development and 120 for more thorough testing.
  */
-#define WORLDEND             30
+#define WORLDEND             180
 
 /*
  * Number of lizard threads to create
@@ -96,9 +96,9 @@ using namespace std;
  * Declare global variables here
  */
 // AP JP
-std::mutex sago2MonkeyGrassMutex;
-std::mutex monkeyGrass2SagoMutex;
-sem_t crossingSemaphore;
+std::mutex sago2MonkeyGrassMutex; // Mutex for the number of lizards crossing from the sago to the monkey grass.
+std::mutex monkeyGrass2SagoMutex; // Mutex for the number of lizards crossing from the monkey grass to the sago.
+sem_t crossingSemaphore; // Semaphore for limiting the number of lizards that can cross at one time.
 
 /**************************************************/
 /* Please leave these variables alone.  They are  */
@@ -219,7 +219,7 @@ void Cat::sleepNow()
   * 
   * @return - N/A
   *
-  * Status: Incomplete - Make changes as you see are necessary.
+  * Status: Complete
   */
 void Cat::catThread (Cat *aCat)
 {
@@ -328,6 +328,9 @@ int Lizard::getId()
  */
 void Lizard::sleepNow()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	int sleepSeconds;
 
 	sleepSeconds = 1 + (int)(random() / (double)RAND_MAX * MAX_LIZARD_SLEEP);
@@ -339,6 +342,9 @@ void Lizard::sleepNow()
     }
 
 	sleep( sleepSeconds );
+
+    // Return right after a sleep in case the program ended during the sleep.
+    if (!running) return; // AP JP
 
 	if (debug)
     {
@@ -356,16 +362,20 @@ void Lizard::sleepNow()
  * to the monkey grass.   Should use some synchronization 
  * facilities (lock/semaphore) here.
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::sago2MonkeyGrassIsSafe()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	if (debug)
     {
 		cout << "[" << _id << "] checking  sago -> monkey grass" << endl;
 		cout << flush;
     }
 
+    // Check if there's an available slot, otherwise wait.
     sem_wait(&crossingSemaphore); // AP JP
 
 	if (debug)
@@ -381,10 +391,16 @@ void Lizard::sago2MonkeyGrassIsSafe()
  * Delays for 1 second to simulate crossing from the sago to
  * the monkey grass. 
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::crossSago2MonkeyGrass()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        return;
+    }
+
 	if (debug)
     {
       cout << "[" << _id << "] crossing  sago -> monkey grass" << endl;
@@ -396,7 +412,7 @@ void Lizard::crossSago2MonkeyGrass()
 	 */
     // AP JP
     sago2MonkeyGrassMutex.lock();
-	numCrossingSago2MonkeyGrass++;
+	numCrossingSago2MonkeyGrass++; // Increment count
     sago2MonkeyGrassMutex.unlock();
 
 	/*
@@ -421,7 +437,7 @@ void Lizard::crossSago2MonkeyGrass()
      */
     // AP JP
     sago2MonkeyGrassMutex.lock();
-	numCrossingSago2MonkeyGrass--;
+	numCrossingSago2MonkeyGrass--; // Decrement count
     sago2MonkeyGrassMutex.unlock();
 }
 
@@ -429,10 +445,16 @@ void Lizard::crossSago2MonkeyGrass()
 /**
  * Tells others they can go now
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::madeIt2MonkeyGrass()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        return;
+    }
+
 	/*
      * Whew, made it across
      */
@@ -442,6 +464,7 @@ void Lizard::madeIt2MonkeyGrass()
 		cout << flush;
     }
 
+    // Release from semaphore.
     sem_post(&crossingSemaphore); // AP JP
 }
 
@@ -453,6 +476,9 @@ void Lizard::madeIt2MonkeyGrass()
  */
 void Lizard::eat()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	int eatSeconds;
 
 	eatSeconds = 1 + (int)(random() / (double)RAND_MAX * MAX_LIZARD_EAT);
@@ -468,6 +494,9 @@ void Lizard::eat()
      */
 	sleep( eatSeconds );
 
+    // Return right after a sleep in case the program ended during the sleep.
+    if (!running) return; // AP JP
+
 	if (debug)
     {
       cout << "[" << _id << "] finished eating" << endl;
@@ -481,19 +510,21 @@ void Lizard::eat()
  * grass to the sago.   Should use some synchronization 
  * facilities (lock/semaphore) here.
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::monkeyGrass2SagoIsSafe()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	if (debug)
     {
 		cout << "[" << _id << "] checking  monkey grass -> sago" << endl;
 		cout << flush;
     }
 
-
+    // Check if there's an available slot, otherwise wait.
     sem_wait(&crossingSemaphore); // AP JP
-
 
 	if (debug)
     {
@@ -508,10 +539,16 @@ void Lizard::monkeyGrass2SagoIsSafe()
  * Delays for 1 second to simulate crossing from the monkey
  * grass to the sago. 
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::crossMonkeyGrass2Sago()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        return;
+    }
+
 	if (debug)
     {
 		cout << "[" << _id << "] crossing  monkey grass -> sago" << endl;
@@ -523,7 +560,7 @@ void Lizard::crossMonkeyGrass2Sago()
      */
     // AP JP
     monkeyGrass2SagoMutex.lock();
-	numCrossingMonkeyGrass2Sago++;
+	numCrossingMonkeyGrass2Sago++; // Increment count
     monkeyGrass2SagoMutex.unlock();
 
   
@@ -548,7 +585,7 @@ void Lizard::crossMonkeyGrass2Sago()
      */
     // AP JP
 	monkeyGrass2SagoMutex.lock();
-	numCrossingMonkeyGrass2Sago--;
+	numCrossingMonkeyGrass2Sago--; // Decrement count
     monkeyGrass2SagoMutex.unlock();
 }
 
@@ -557,10 +594,16 @@ void Lizard::crossMonkeyGrass2Sago()
  *
  * Tells others they can go now
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::madeIt2Sago()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        return;
+    }
+    
 	/*
      * Whew, made it across
      */
@@ -570,6 +613,7 @@ void Lizard::madeIt2Sago()
 		cout << flush;
     }
 
+    // Release from semaphore.
     sem_post(&crossingSemaphore); // AP JP
 }
 
@@ -582,9 +626,9 @@ void Lizard::madeIt2Sago()
   *
   * @return N/A
   
-  * Status: Incomplete - Make changes as you see are necessary.
+  * Status: Complete
   */
-void Lizard::lizardThread(Lizard *aLizard) // AP JP
+void Lizard::lizardThread(Lizard *aLizard)
 {	
 	if (debug)
     {
@@ -601,6 +645,7 @@ void Lizard::lizardThread(Lizard *aLizard) // AP JP
        * some functions by filling in the code.  Some  
        * are already completed - see the comments.
        */
+        // AP JP
         aLizard->sleepNow();
         aLizard->sago2MonkeyGrassIsSafe();
         aLizard->crossSago2MonkeyGrass();
@@ -708,7 +753,6 @@ int main(int argc, char **argv)
     for (int i = 0; i < NUM_LIZARDS; i++) {
         allLizards[i]->wait();
     }
-
     for (int i = 0; i < NUM_CATS; i++) {
         allCats[i]->wait();
     }
@@ -728,7 +772,6 @@ int main(int argc, char **argv)
         delete allLizards[i];
         allLizards[i] = nullptr;
     }
-
     for (int i = 0; i < NUM_CATS; i++) {
         delete allCats[i];
         allCats[i] = nullptr;
