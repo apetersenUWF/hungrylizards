@@ -20,10 +20,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <semaphore.h> // AP JP
 
 #include <iostream>
 #include <thread>
 #include <mutex>
+#include <condition_variable> // AP JP
 #include <vector>
 
 
@@ -53,7 +55,7 @@ using namespace std;
  * be simulated.  
  * Try 30 for development and 120 for more thorough testing.
  */
-#define WORLDEND             30
+#define WORLDEND             180
 
 /*
  * Number of lizard threads to create
@@ -94,6 +96,14 @@ using namespace std;
 /*
  * Declare global variables here
  */
+// AP JP
+std::mutex sago2MonkeyGrassMutex; // Mutex for the number of lizards crossing from the sago to the monkey grass.
+std::mutex monkeyGrass2SagoMutex; // Mutex for the number of lizards crossing from the monkey grass to the sago.
+sem_t crossingSemaphore; // Semaphore for limiting the number of lizards that can cross at one time.
+std::mutex crossingGateMutex; // Mutex that acts like a gate that prevents lizards crossing the opposite way of the rest from occupying the semaphore.
+std::mutex directionMutex; // Mutex for the condition variable for checking which direction the lizards can travel.
+std::condition_variable directionCV; // Condition variable for checking which direction the lizards can travel.
+bool isDirection2MonkeyGrass; // Boolean that represents which direction the lizards can travel. I chose to represent if they are going from the sago to the monkey grass since that's the way they travel from the start.
 
 
 /**************************************************/
@@ -160,7 +170,7 @@ int Cat::getId()
  void Cat::run() 
  {
 	 // launch the thread to simulate the cat's behavior	 
-	 
+  _catThread = new thread ( catThread, this); //AP JP
  }
  
  /**
@@ -171,6 +181,9 @@ int Cat::getId()
  void Cat::wait()
  {
 	 // wait for the thread to terminate
+   	if (_catThread != NULL) { //AP JP
+      _catThread->join(); //AP JP
+    } 
  }
  
  
@@ -212,7 +225,7 @@ void Cat::sleepNow()
   * 
   * @return - N/A
   *
-  * Status: Incomplete - Make changes as you see are necessary.
+  * Status: Complete
   */
 void Cat::catThread (Cat *aCat)
 {
@@ -321,6 +334,9 @@ int Lizard::getId()
  */
 void Lizard::sleepNow()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	int sleepSeconds;
 
 	sleepSeconds = 1 + (int)(random() / (double)RAND_MAX * MAX_LIZARD_SLEEP);
@@ -332,6 +348,9 @@ void Lizard::sleepNow()
     }
 
 	sleep( sleepSeconds );
+
+    // Return right after a sleep in case the program ended during the sleep.
+    if (!running) return; // AP JP
 
 	if (debug)
     {
@@ -349,18 +368,29 @@ void Lizard::sleepNow()
  * to the monkey grass.   Should use some synchronization 
  * facilities (lock/semaphore) here.
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::sago2MonkeyGrassIsSafe()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	if (debug)
     {
 		cout << "[" << _id << "] checking  sago -> monkey grass" << endl;
 		cout << flush;
     }
 
-	
-
+    // AP JP
+    std::unique_lock<std::mutex> lock(directionMutex);
+    directionCV.wait(lock, [] { // Wait until the direction is set to sago to monkey grass and that no more lizards are traveling from monkey grass to sago.
+        return (isDirection2MonkeyGrass && numCrossingMonkeyGrass2Sago == 0) || !running; // Releases the thread from waiting when the program is ended.
+    });
+    if (!running) return; // Return right after a sleep in case the program ended during the sleep.
+    if (numCrossingSago2MonkeyGrass == 0) { // If the lizard is the first to enter, then "lock the gate."
+        crossingGateMutex.lock();
+    }
+    sem_wait(&crossingSemaphore); // Check if there's an available slot, otherwise wait.
 
 	if (debug)
     {
@@ -375,10 +405,18 @@ void Lizard::sago2MonkeyGrassIsSafe()
  * Delays for 1 second to simulate crossing from the sago to
  * the monkey grass. 
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::crossSago2MonkeyGrass()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        crossingGateMutex.unlock(); // Release the gate lock.
+        directionCV.notify_all(); // Notify other threads that are stuck waiting in the CV.
+        return;
+    }
+
 	if (debug)
     {
       cout << "[" << _id << "] crossing  sago -> monkey grass" << endl;
@@ -388,7 +426,10 @@ void Lizard::crossSago2MonkeyGrass()
 	/*
 	 * One more crossing this way
 	 */
-	numCrossingSago2MonkeyGrass++;
+    // AP JP
+    sago2MonkeyGrassMutex.lock();
+	numCrossingSago2MonkeyGrass++; // Increment count
+    sago2MonkeyGrassMutex.unlock();
 
 	/*
      * Check for lizards cross both ways
@@ -410,17 +451,28 @@ void Lizard::crossSago2MonkeyGrass()
     /*
      * That one seems to have made it
      */
-    numCrossingSago2MonkeyGrass--;
+    // AP JP
+    sago2MonkeyGrassMutex.lock();
+	numCrossingSago2MonkeyGrass--; // Decrement count
+    sago2MonkeyGrassMutex.unlock();
 }
 
 
 /**
  * Tells others they can go now
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::madeIt2MonkeyGrass()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        crossingGateMutex.unlock(); // Release the gate lock.
+        directionCV.notify_all(); // Notify other threads that are stuck waiting in the CV.
+        return;
+    }
+
 	/*
      * Whew, made it across
      */
@@ -430,10 +482,20 @@ void Lizard::madeIt2MonkeyGrass()
 		cout << flush;
     }
 
+    // AP JP
+    sem_post(&crossingSemaphore); // Release from semaphore.
+    if (numCrossingSago2MonkeyGrass == 0) { // If the lizard is last to leave, then "unlock the gate."
+        crossingGateMutex.unlock();
 
+        directionMutex.lock();
+        isDirection2MonkeyGrass = false; // Flip direction.
+        directionMutex.unlock();
 
-
-
+        // Then notify MAX_LIZARD_CROSSING number of other lizards waiting to cross the opposite direction. I set it to only notify the max as it seems to cause collisions with notify_all.
+        for (int i = 0; i < MAX_LIZARD_CROSSING; i++) {
+            directionCV.notify_one();
+        }
+    }
 }
 
 
@@ -444,6 +506,9 @@ void Lizard::madeIt2MonkeyGrass()
  */
 void Lizard::eat()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	int eatSeconds;
 
 	eatSeconds = 1 + (int)(random() / (double)RAND_MAX * MAX_LIZARD_EAT);
@@ -459,6 +524,9 @@ void Lizard::eat()
      */
 	sleep( eatSeconds );
 
+    // Return right after a sleep in case the program ended during the sleep.
+    if (!running) return; // AP JP
+
 	if (debug)
     {
       cout << "[" << _id << "] finished eating" << endl;
@@ -472,10 +540,13 @@ void Lizard::eat()
  * grass to the sago.   Should use some synchronization 
  * facilities (lock/semaphore) here.
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::monkeyGrass2SagoIsSafe()
 {
+    // Just in case if a thread enters this function right when the program is stopped.
+    if (!running) return; // AP JP
+
 	if (debug)
     {
 		cout << "[" << _id << "] checking  monkey grass -> sago" << endl;
@@ -483,8 +554,16 @@ void Lizard::monkeyGrass2SagoIsSafe()
     }
 
 
-
-
+    // AP JP
+    std::unique_lock<std::mutex> lock(directionMutex);
+    directionCV.wait(lock, [] { // Wait until the direction is set to monkey grass to sago and that no more lizards are traveling from sago to monkey grass.
+        return (!isDirection2MonkeyGrass && numCrossingSago2MonkeyGrass == 0) || !running; // Releases the thread from waiting when the program is ended.
+    });
+    if (!running) return; // Return right after a sleep in case the program ended during the sleep.
+    if (numCrossingMonkeyGrass2Sago == 0) { // If the lizard is the first to enter, then "lock the gate."
+        crossingGateMutex.lock();
+    }
+    sem_wait(&crossingSemaphore); // Check if there's an available slot, otherwise wait.
 
 	if (debug)
     {
@@ -499,10 +578,18 @@ void Lizard::monkeyGrass2SagoIsSafe()
  * Delays for 1 second to simulate crossing from the monkey
  * grass to the sago. 
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::crossMonkeyGrass2Sago()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        crossingGateMutex.unlock(); // Release the gate lock.
+        directionCV.notify_all(); // Notify other threads that are stuck waiting in the CV.
+        return;
+    }
+
 	if (debug)
     {
 		cout << "[" << _id << "] crossing  monkey grass -> sago" << endl;
@@ -512,8 +599,10 @@ void Lizard::crossMonkeyGrass2Sago()
     /*
      * One more crossing this way
      */
-	numCrossingMonkeyGrass2Sago++;
-
+    // AP JP
+    monkeyGrass2SagoMutex.lock();
+	numCrossingMonkeyGrass2Sago++; // Increment count
+    monkeyGrass2SagoMutex.unlock();
   
     /*
      * Check for lizards cross both ways
@@ -534,7 +623,10 @@ void Lizard::crossMonkeyGrass2Sago()
 	/*
      * That one seems to have made it
      */
-	numCrossingMonkeyGrass2Sago--;
+    // AP JP
+	monkeyGrass2SagoMutex.lock();
+	numCrossingMonkeyGrass2Sago--; // Decrement count
+    monkeyGrass2SagoMutex.unlock();
 }
 
 
@@ -542,10 +634,18 @@ void Lizard::crossMonkeyGrass2Sago()
  *
  * Tells others they can go now
  *
- * Status: Incomplete - Make changes as you see are necessary.
+ * Status: Complete
  */
 void Lizard::madeIt2Sago()
 {
+    // AP JP
+    if (!running) { // Return if program was stopped right before the thread was released from the semaphore.
+        sem_post(&crossingSemaphore); // Release from semaphore.
+        crossingGateMutex.unlock(); // Release the gate lock.
+        directionCV.notify_all(); // Notify other threads that are stuck waiting in the CV.
+        return;
+    }
+
 	/*
      * Whew, made it across
      */
@@ -553,6 +653,21 @@ void Lizard::madeIt2Sago()
     {
 		cout << "[" << _id << "] made the  monkey grass -> sago  crossing" << endl;
 		cout << flush;
+    }
+
+    // AP JP
+    sem_post(&crossingSemaphore); // Release from semaphore.
+    if (numCrossingMonkeyGrass2Sago == 0) { // If the lizard is last to leave, then "unlock the gate."
+        crossingGateMutex.unlock();
+
+        directionMutex.lock();
+        isDirection2MonkeyGrass = true; // Flip direction.
+        directionMutex.unlock();
+
+        // Then notify MAX_LIZARD_CROSSING number of other lizards waiting to cross the opposite direction. I set it to only notify the max as it seems to cause collisions with notify_all.
+        for (int i = 0; i < MAX_LIZARD_CROSSING; i++) {
+            directionCV.notify_one();
+        }
     }
 }
 
@@ -565,7 +680,7 @@ void Lizard::madeIt2Sago()
   *
   * @return N/A
   
-  * Status: Incomplete - Make changes as you see are necessary.
+  * Status: Complete
   */
 void Lizard::lizardThread(Lizard *aLizard)
 {	
@@ -584,26 +699,16 @@ void Lizard::lizardThread(Lizard *aLizard)
        * some functions by filling in the code.  Some  
        * are already completed - see the comments.
        */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        // AP JP
+        aLizard->sleepNow();
+        aLizard->sago2MonkeyGrassIsSafe();
+        aLizard->crossSago2MonkeyGrass();
+        aLizard->madeIt2MonkeyGrass();
+        aLizard->eat();
+        aLizard->monkeyGrass2SagoIsSafe();
+        aLizard->crossMonkeyGrass2Sago();
+        aLizard->madeIt2Sago();
     }
-
 }
  
 
@@ -640,6 +745,7 @@ int main(int argc, char **argv)
      */
 	numCrossingSago2MonkeyGrass = 0;
 	numCrossingMonkeyGrass2Sago = 0;
+    isDirection2MonkeyGrass = true; // AP JP
 	running = 1;
 
 
@@ -652,8 +758,7 @@ int main(int argc, char **argv)
 	/*
      * Initialize locks and/or semaphores
      */
-
-
+    sem_init(&crossingSemaphore, 0, MAX_LIZARD_CROSSING); // AP JP
 
 
 	/*
@@ -668,7 +773,10 @@ int main(int argc, char **argv)
     /*
      * Create NUM_CATS cat threads
      */
-	 
+    vector<Cat*> allCats; //AP JP
+    for (int i=0; i < NUM_CATS; i++) { //AP JP
+	    allCats.push_back(new Cat(i)); //AP JP
+    }    
 
 	/*
 	 * Run NUM_LIZARDS and NUM_CATS threads
@@ -676,6 +784,9 @@ int main(int argc, char **argv)
     for (int i=0; i < NUM_LIZARDS; i++) {
         allLizards[i]->run();
     }
+    for (int i=0; i < NUM_CATS; i++) { //AP JP
+	    allCats[i]->run(); //AP JP
+    }    
 
 	/*
      * Now let the world run for a while
@@ -688,27 +799,39 @@ int main(int argc, char **argv)
      */
 	running = 0;
 
+    // Notify any threads stuck waiting on the CV.
+    directionCV.notify_all(); // AP JP
 
     /*
      * Wait until all threads terminate
      */
-
-
-
-
+    // AP JP
+    for (int i = 0; i < NUM_LIZARDS; i++) {
+        allLizards[i]->wait();
+    }
+    for (int i = 0; i < NUM_CATS; i++) {
+        allCats[i]->wait();
+    }
 
 
 	/*
      * Delete the locks and semaphores
      */
-	 
+	sem_destroy(&crossingSemaphore); // AP JP
 	 
 	 
 	/*
 	 * Delete all cat and lizard objects
 	 */
- 
-
+    // AP JP
+    for (int i = 0; i < NUM_LIZARDS; i++) {
+        delete allLizards[i];
+        allLizards[i] = nullptr;
+    }
+    for (int i = 0; i < NUM_CATS; i++) {
+        delete allCats[i];
+        allCats[i] = nullptr;
+    }
 
 
 	/*
